@@ -4,6 +4,7 @@ import requests
 import os
 from datetime import datetime
 import pymysql
+import json
 
 app = Flask(__name__)
 
@@ -38,10 +39,14 @@ def verify_slip(payload):
     try:
         headers = {
             "Authorization": f"Bearer {SECRET_KEY}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json; charset=utf-8"
         }
 
-        res = requests.post(API_URL, json={"payload": {"qrCode": payload}}, headers=headers)
+        res = requests.post(
+            API_URL,
+            data=json.dumps({"payload": {"qrCode": payload}}, ensure_ascii=False).encode("utf-8"),
+            headers=headers
+        )
 
         if res.status_code != 200:
             return {"status": "error"}
@@ -87,17 +92,17 @@ def upload():
         filepath = os.path.join("uploads", file.filename)
         file.save(filepath)
 
+        # =========================
         # 🔍 อ่าน QR
+        # =========================
         img = cv2.imread(filepath)
 
-        # 🔥 เพิ่มความคม
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (5, 5), 0)
         _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
         detector = cv2.QRCodeDetector()
 
-        # ลองอ่านหลายแบบ
         data, _, _ = detector.detectAndDecode(img)
 
         if not data:
@@ -106,10 +111,27 @@ def upload():
         if not data:
             data, _, _ = detector.detectAndDecode(thresh)
 
-        print("QR DATA:", data)  # debug
+        print("QR DATA:", data)
 
         if not data:
             return jsonify({"status": "no_qr"})
+
+        # =========================
+        # 🌐 เรียก API
+        # =========================
+        api_result = verify_slip(data)
+
+        if api_result.get("status") == "not_found":
+            return jsonify({"status": "invalid"})
+
+        if api_result.get("status") == "error":
+            return jsonify({"status": "error"})
+
+        # 🔒 กันโกง
+        if api_result.get("amount") != "100.00":
+            return jsonify({"status": "amount_mismatch"})
+
+        trans_ref = api_result.get("transRef")
 
         # =========================
         # 🔥 DB CHECK
@@ -146,8 +168,8 @@ def upload():
             minutes = diff.seconds // 60
             time_text = f"{minutes} นาที"
 
-        except:
-            pass
+        except Exception as e:
+            print("TIME ERROR:", e)
 
         api_result["time_passed"] = time_text
 

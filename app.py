@@ -6,7 +6,7 @@ from datetime import datetime
 import pymysql
 
 app = Flask(__name__)
-
+print("🔥 VERSION 999 🔥")
 # 🔑 API
 SECRET_KEY = "+ixZdmZFGS7_lFepb5tSUtA4Z++tRyrPsmycEuA7f8s="
 API_URL = "https://connect.slip2go.com/api/verify-slip/qr-code/info"

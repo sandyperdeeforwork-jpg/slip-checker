@@ -2,23 +2,25 @@ from flask import Flask, request, jsonify, render_template
 import cv2
 import requests
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import pymysql
-import json
 
 app = Flask(__name__)
 
-print("🔥 VERSION 999 🔥")
-# 🔑 API
-SECRET_KEY = "+ixZdmZFGS7_lFepb5tSUtA4Z++tRyrPsmycEuA7f8s="
+print("🔥 PRODUCTION VERSION 🔥")
+
+# =========================
+# 🔑 CONFIG (ควรใช้ ENV)
+# =========================
+SECRET_KEY = os.getenv("API_KEY")  # 🔥 แนะนำใช้ ENV
 API_URL = "https://connect.slip2go.com/api/verify-slip/qr-code/info"
 
 # =========================
-# 🔥 DB CONNECT (กันพัง)
+# 🔥 DB CONNECT
 # =========================
 def get_db():
     try:
-        connection = pymysql.connect(
+        return pymysql.connect(
             host=os.getenv("MYSQLHOST"),
             user=os.getenv("MYSQLUSER"),
             password=os.getenv("MYSQLPASSWORD"),
@@ -26,29 +28,29 @@ def get_db():
             port=int(os.getenv("MYSQLPORT")),
             cursorclass=pymysql.cursors.DictCursor
         )
-        return connection
     except Exception as e:
         print("DB ERROR:", e)
         return None
 
-
 # =========================
-# 🔥 VERIFY API
+# 🌐 VERIFY API
 # =========================
 def verify_slip(payload):
     try:
         headers = {
             "Authorization": f"Bearer {SECRET_KEY}",
-            "Content-Type": "application/json; charset=utf-8"
+            "Content-Type": "application/json"
         }
 
         res = requests.post(
             API_URL,
-            data=json.dumps({"payload": {"qrCode": payload}}, ensure_ascii=False).encode("utf-8"),
-            headers=headers
+            json={"payload": {"qrCode": payload}},
+            headers=headers,
+            timeout=10
         )
 
         if res.status_code != 200:
+            print("API STATUS:", res.status_code)
             return {"status": "error"}
 
         result = res.json()
@@ -60,15 +62,15 @@ def verify_slip(payload):
 
         return {
             "status": "ok",
-            "amount": str(d.get("amount", "-")),
+            "amount": float(d.get("amount", 0)),
             "date": d.get("dateTime"),
-            "transRef": d.get("transRef")
+            "transRef": d.get("transRef"),
+            "receiver": d.get("receiver", "")
         }
 
     except Exception as e:
         print("API ERROR:", e)
         return {"status": "error"}
-
 
 # =========================
 # ROUTES
@@ -76,7 +78,6 @@ def verify_slip(payload):
 @app.route("/")
 def index():
     return render_template("index.html")
-
 
 @app.route("/upload", methods=["POST"])
 def upload():
@@ -93,7 +94,7 @@ def upload():
         file.save(filepath)
 
         # =========================
-        # 🔍 อ่าน QR
+        # 🔍 QR SCAN (3 ชั้น)
         # =========================
         img = cv2.imread(filepath)
 
@@ -117,9 +118,10 @@ def upload():
             return jsonify({"status": "no_qr"})
 
         # =========================
-        # 🌐 เรียก API
+        # 🌐 VERIFY
         # =========================
         api_result = verify_slip(data)
+        print("API RESULT:", api_result)
 
         if api_result.get("status") == "not_found":
             return jsonify({"status": "invalid"})
@@ -127,41 +129,69 @@ def upload():
         if api_result.get("status") == "error":
             return jsonify({"status": "error"})
 
-        # 🔒 กันโกง
-        if api_result.get("amount") != "100.00":
+        # =========================
+        # 🔒 ANTI-FRAUD
+        # =========================
+
+        # ✅ เช็คยอดเงิน
+        if api_result["amount"] != 100.0:
             return jsonify({"status": "amount_mismatch"})
+
+        # ✅ เช็คเวลา (ไม่เกิน 5 นาที)
+        try:
+            slip_time = datetime.fromisoformat(api_result["date"])
+            now = datetime.now(slip_time.tzinfo)
+
+            if now - slip_time > timedelta(minutes=5):
+                return jsonify({"status": "expired"})
+        except Exception as e:
+            print("TIME CHECK ERROR:", e)
 
         trans_ref = api_result.get("transRef")
 
+        if not trans_ref:
+            return jsonify({"status": "error"})
+
         # =========================
-        # 🔥 DB CHECK
+        # 🔥 DB CHECK (กันซ้ำ)
         # =========================
         db = get_db()
 
         if db:
-            cursor = db.cursor()
+            try:
+                cursor = db.cursor()
 
-            cursor.execute("SELECT * FROM slips WHERE trans_ref=%s", (trans_ref,))
-            existing = cursor.fetchone()
+                cursor.execute(
+                    "SELECT * FROM slips WHERE trans_ref=%s",
+                    (trans_ref,)
+                )
+                existing = cursor.fetchone()
 
-            if existing:
-                return jsonify({
-                    "status": "duplicate",
-                    "data": api_result
-                })
+                if existing:
+                    return jsonify({
+                        "status": "duplicate",
+                        "data": api_result
+                    })
 
-            cursor.execute(
-                "INSERT INTO slips (trans_ref, amount) VALUES (%s, %s)",
-                (trans_ref, api_result.get("amount"))
-            )
-            db.commit()
+                cursor.execute(
+                    "INSERT INTO slips (trans_ref, amount) VALUES (%s, %s)",
+                    (trans_ref, api_result["amount"])
+                )
+                db.commit()
+
+            except Exception as e:
+                print("DB INSERT ERROR:", e)
+                return jsonify({"status": "error"})
+
+            finally:
+                db.close()
 
         # =========================
-        # ⏱️ TIME
+        # ⏱️ TIME DISPLAY
         # =========================
         time_text = "-"
         try:
-            slip_time = datetime.fromisoformat(api_result.get("date"))
+            slip_time = datetime.fromisoformat(api_result["date"])
             now = datetime.now(slip_time.tzinfo)
             diff = now - slip_time
 
@@ -182,7 +212,6 @@ def upload():
         import traceback
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)})
-
 
 # =========================
 # RUN

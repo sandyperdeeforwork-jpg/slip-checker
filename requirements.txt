@@ -1,0 +1,6 @@
+Flask
+requests
+opencv-python-headless
+pyzbar
+pymysql
+python-dotenv

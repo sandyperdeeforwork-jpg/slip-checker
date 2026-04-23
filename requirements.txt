@@ -1,6 +1,6 @@
-Flask
-requests
-opencv-python-headless
+flask
+gunicorn
+opencv-python
 pyzbar
+requests
 pymysql
-python-dotenv

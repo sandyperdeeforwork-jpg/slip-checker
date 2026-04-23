@@ -95,8 +95,8 @@ def upload():
         _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
         detector = cv2.QRCodeDetector()
-        data, _, _ = detector.detectAndDecode(thresh)
 
+        # ลองอ่านหลายแบบ
         data, _, _ = detector.detectAndDecode(img)
 
         if not data:
@@ -105,16 +105,10 @@ def upload():
         if not data:
             data, _, _ = detector.detectAndDecode(thresh)
 
-        # 🌐 API
-        api_result = verify_slip(data)
+        print("QR DATA:", data)  # debug
 
-        if api_result.get("status") == "not_found":
-            return jsonify({"status": "invalid"})
-
-        if api_result.get("status") == "error":
-            return jsonify({"status": "error"})
-
-        trans_ref = api_result.get("transRef")
+        if not data:
+            return jsonify({"status": "no_qr"})
 
         # =========================
         # 🔥 DB CHECK

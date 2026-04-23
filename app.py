@@ -6,25 +6,18 @@ from datetime import datetime
 import os
 from urllib.parse import urlparse
 import pymysql
+import os
 
-# 🔥 ถ้ามี MYSQL_URL ให้ใช้ (Railway)
-if os.getenv("MYSQL_URL"):
-    url = urlparse(os.getenv("MYSQL_URL"))
+db = pymysql.connect(
+    host=os.getenv("MYSQLHOST"),
+    user=os.getenv("MYSQLUSER"),
+    password=os.getenv("MYSQLPASSWORD"),
+    database=os.getenv("MYSQLDATABASE"),
+    port=int(os.getenv("MYSQLPORT")),
+    cursorclass=pymysql.cursors.DictCursor
+)
 
-    db = pymysql.connect(
-        host=url.hostname,
-        user=url.username,
-        password=url.password,
-        database=url.path[1:],
-        port=url.port,
-        cursorclass=pymysql.cursors.DictCursor
-    )
-else:
-    # fallback (local)
-    db = None
-
-cursor = db.cursor() if db else None
-
+cursor = db.cursor()
 app = Flask(__name__)
 
 # 🔑 API
@@ -124,6 +117,24 @@ def upload():
         # 🌐 เรียก API
         # =========================
         api_result = verify_slip(payload)
+        trans_ref = api_result.get("transRef")
+
+        # 🔍 เช็คซ้ำ
+        cursor.execute("SELECT * FROM slips WHERE trans_ref=%s", (trans_ref,))
+        existing = cursor.fetchone()
+
+        if existing:
+            return jsonify({
+                "status": "duplicate",
+                "data": api_result
+            })
+
+        # 💾 บันทึก
+        cursor.execute(
+            "INSERT INTO slips (trans_ref, amount) VALUES (%s, %s)",
+            (trans_ref, api_result.get("amount"))
+        )
+        db.commit()
 
         if api_result.get("status") != "ok":
             return jsonify({"status": "invalid"})

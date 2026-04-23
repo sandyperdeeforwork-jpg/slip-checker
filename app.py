@@ -3,33 +3,35 @@ import cv2
 import requests
 import os
 from datetime import datetime
-import os
-from urllib.parse import urlparse
 import pymysql
-import os
 
-db = pymysql.connect(
-    host=os.getenv("MYSQLHOST"),
-    user=os.getenv("MYSQLUSER"),
-    password=os.getenv("MYSQLPASSWORD"),
-    database=os.getenv("MYSQLDATABASE"),
-    port=int(os.getenv("MYSQLPORT")),
-    cursorclass=pymysql.cursors.DictCursor
-)
-
-cursor = db.cursor()
 app = Flask(__name__)
 
 # 🔑 API
-SECRET_KEY = "+ixZdmZFGS7_lFepb5tSUtA4Z++tRyrPsmycEuA7f8s="
+SECRET_KEY = "ใส่ของคุณ"
 API_URL = "https://connect.slip2go.com/api/verify-slip/qr-code/info"
 
-# 🔥 กันสลิปซ้ำ (จำในเครื่อง)
-USED_SLIPS = {}
+# =========================
+# 🔥 DB CONNECT (กันพัง)
+# =========================
+def get_db():
+    try:
+        connection = pymysql.connect(
+            host=os.getenv("MYSQLHOST"),
+            user=os.getenv("MYSQLUSER"),
+            password=os.getenv("MYSQLPASSWORD"),
+            database=os.getenv("MYSQLDATABASE"),
+            port=int(os.getenv("MYSQLPORT")),
+            cursorclass=pymysql.cursors.DictCursor
+        )
+        return connection
+    except Exception as e:
+        print("DB ERROR:", e)
+        return None
 
 
 # =========================
-# 🔥 STEP 1: ยิง API
+# 🔥 VERIFY API
 # =========================
 def verify_slip(payload):
     try:
@@ -38,12 +40,7 @@ def verify_slip(payload):
             "Content-Type": "application/json"
         }
 
-        data = {"payload": {"qrCode": payload}}
-
-        res = requests.post(API_URL, json=data, headers=headers)
-
-        print("STATUS:", res.status_code)
-        print("RAW:", res.text)
+        res = requests.post(API_URL, json={"payload": {"qrCode": payload}}, headers=headers)
 
         if res.status_code != 200:
             return {"status": "error"}
@@ -55,16 +52,9 @@ def verify_slip(payload):
 
         d = result.get("data", {})
 
-        sender = d.get("sender", {}).get("account", {})
-        receiver = d.get("receiver", {}).get("account", {})
-
         return {
             "status": "ok",
             "amount": str(d.get("amount", "-")),
-            "sender_name": sender.get("nameTh") or sender.get("name") or "-",
-            "receiver_name": receiver.get("nameTh") or receiver.get("name") or "-",
-            "sender_account": sender.get("bank", {}).get("account") or "-",
-            "receiver_account": receiver.get("bank", {}).get("account") or "-",
             "date": d.get("dateTime"),
             "transRef": d.get("transRef")
         }
@@ -75,7 +65,7 @@ def verify_slip(payload):
 
 
 # =========================
-# 🔥 ROUTE
+# ROUTES
 # =========================
 @app.route("/")
 def index():
@@ -85,9 +75,6 @@ def index():
 @app.route("/upload", methods=["POST"])
 def upload():
     try:
-        # =========================
-        # 📁 รับไฟล์
-        # =========================
         if "file" not in request.files:
             return jsonify({"status": "no_file"})
 
@@ -99,100 +86,62 @@ def upload():
         filepath = os.path.join("uploads", file.filename)
         file.save(filepath)
 
-        # =========================
         # 🔍 อ่าน QR
-        # =========================
         img = cv2.imread(filepath)
-
         detector = cv2.QRCodeDetector()
-        data, bbox, _ = detector.detectAndDecode(img)
+        data, _, _ = detector.detectAndDecode(img)
 
         if not data:
             return jsonify({"status": "no_qr"})
 
-        payload = data
-        print("PAYLOAD:", payload)
-
-        # =========================
-        # 🌐 เรียก API
-        # =========================
-        api_result = verify_slip(payload)
-        trans_ref = api_result.get("transRef")
-
-        # 🔍 เช็คซ้ำ
-        cursor.execute("SELECT * FROM slips WHERE trans_ref=%s", (trans_ref,))
-        existing = cursor.fetchone()
-
-        if existing:
-            return jsonify({
-                "status": "duplicate",
-                "data": api_result
-            })
-
-        # 💾 บันทึก
-        cursor.execute(
-            "INSERT INTO slips (trans_ref, amount) VALUES (%s, %s)",
-            (trans_ref, api_result.get("amount"))
-        )
-        db.commit()
+        # 🌐 API
+        api_result = verify_slip(data)
 
         if api_result.get("status") != "ok":
             return jsonify({"status": "invalid"})
 
-        # =========================
-        # ⏱️ คำนวณเวลาโอน
-        # =========================
-        time_text = "-"
-
-        try:
-            slip_time_str = api_result.get("date")
-
-            if slip_time_str:
-                slip_time = datetime.fromisoformat(slip_time_str)
-
-                if slip_time.tzinfo is None:
-                    now = datetime.now()
-                else:
-                    now = datetime.now(slip_time.tzinfo)
-
-                diff = now - slip_time
-
-                days = diff.days
-                hours = diff.seconds // 3600
-                minutes = (diff.seconds % 3600) // 60
-
-                # 🔥 ปรับให้สวย
-                if days == 0:
-                    time_text = f"{hours} ชั่วโมง {minutes} นาที"
-                else:
-                    time_text = f"{days} วัน {hours} ชั่วโมง {minutes} นาที"
-
-        except Exception as e:
-            print("TIME ERROR:", e)
-
-        # 👉 ใส่ค่าเข้า result
-        api_result["time_passed"] = time_text
-
-        # =========================
-        # 🔁 เช็คสลิปซ้ำ
-        # =========================
         trans_ref = api_result.get("transRef")
 
-        if not trans_ref:
-            return jsonify({"status": "invalid"})
+        # =========================
+        # 🔥 DB CHECK
+        # =========================
+        db = get_db()
 
-        if trans_ref in USED_SLIPS:
-            return jsonify({
-                "status": "duplicate",
-                "data": api_result
-            })
+        if db:
+            cursor = db.cursor()
 
-        # 👉 บันทึกว่าใช้แล้ว
-        USED_SLIPS[trans_ref] = True
+            cursor.execute("SELECT * FROM slips WHERE trans_ref=%s", (trans_ref,))
+            existing = cursor.fetchone()
+
+            if existing:
+                return jsonify({
+                    "status": "duplicate",
+                    "data": api_result
+                })
+
+            cursor.execute(
+                "INSERT INTO slips (trans_ref, amount) VALUES (%s, %s)",
+                (trans_ref, api_result.get("amount"))
+            )
+            db.commit()
 
         # =========================
-        # ✅ ผ่าน
+        # ⏱️ TIME
         # =========================
+        time_text = "-"
+        try:
+            slip_time = datetime.fromisoformat(api_result.get("date"))
+            now = datetime.now(slip_time.tzinfo)
+            diff = now - slip_time
+
+            minutes = diff.seconds // 60
+            time_text = f"{minutes} นาที"
+
+        except:
+            pass
+
+        api_result["time_passed"] = time_text
+
         return jsonify({
             "status": "ok",
             "data": api_result
@@ -201,15 +150,11 @@ def upload():
     except Exception as e:
         import traceback
         traceback.print_exc()
-
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        })
+        return jsonify({"status": "error", "message": str(e)})
 
 
 # =========================
-# 🔥 RUN
+# RUN
 # =========================
 if __name__ == "__main__":
     os.makedirs("uploads", exist_ok=True)

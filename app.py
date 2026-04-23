@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify, render_template
 import cv2
-from pyzbar.pyzbar import decode
 import requests
 import os
 from datetime import datetime
@@ -112,15 +111,13 @@ def upload():
         # =========================
         img = cv2.imread(filepath)
 
-        if img is None:
-            return jsonify({"status": "invalid_image"})
+        detector = cv2.QRCodeDetector()
+        data, bbox, _ = detector.detectAndDecode(img)
 
-        qr = decode(img)
-
-        if not qr:
+        if not data:
             return jsonify({"status": "no_qr"})
 
-        payload = qr[0].data.decode("utf-8")
+        payload = data
         print("PAYLOAD:", payload)
 
         # =========================

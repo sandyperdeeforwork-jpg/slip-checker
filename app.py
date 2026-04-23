@@ -8,7 +8,7 @@ import pymysql
 app = Flask(__name__)
 
 # 🔑 API
-SECRET_KEY = "ใส่ของคุณ"
+SECRET_KEY = "+ixZdmZFGS7_lFepb5tSUtA4Z++tRyrPsmycEuA7f8s="
 API_URL = "https://connect.slip2go.com/api/verify-slip/qr-code/info"
 
 # =========================
@@ -88,17 +88,31 @@ def upload():
 
         # 🔍 อ่าน QR
         img = cv2.imread(filepath)
+
+        # 🔥 เพิ่มความคม
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (5, 5), 0)
+        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
         detector = cv2.QRCodeDetector()
+        data, _, _ = detector.detectAndDecode(thresh)
+
         data, _, _ = detector.detectAndDecode(img)
 
         if not data:
-            return jsonify({"status": "no_qr"})
+            data, _, _ = detector.detectAndDecode(gray)
+
+        if not data:
+            data, _, _ = detector.detectAndDecode(thresh)
 
         # 🌐 API
         api_result = verify_slip(data)
 
-        if api_result.get("status") != "ok":
+        if api_result.get("status") == "not_found":
             return jsonify({"status": "invalid"})
+
+        if api_result.get("status") == "error":
+            return jsonify({"status": "error"})
 
         trans_ref = api_result.get("transRef")
 

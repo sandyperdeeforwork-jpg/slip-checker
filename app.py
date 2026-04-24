@@ -7,7 +7,7 @@ import pymysql
 
 app = Flask(__name__)
 
-print("🔥 FINAL CLEAN VERSION 🔥")
+print("🔥 UTF8 FIX VERSION 🔥")
 
 # =========================
 # 🔑 CONFIG

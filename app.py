@@ -68,6 +68,7 @@ def verify_slip(payload):
 
         print("API STATUS:", res.status_code)
         print("API TEXT:", res.text)
+        print("API KEY:", SECRET_KEY)
 
         if res.status_code != 200:
             return {"status": "error"}

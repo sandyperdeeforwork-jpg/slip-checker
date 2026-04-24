@@ -7,7 +7,7 @@ import pymysql
 
 app = Flask(__name__)
 
-print("🔥 CLEAN VERSION 🔥")
+print("🔥 FINAL CLEAN VERSION 🔥")
 
 # =========================
 # 🔑 CONFIG
@@ -83,6 +83,9 @@ def index():
 @app.route("/upload", methods=["POST"])
 def upload():
     try:
+        # =========================
+        # 📥 รับไฟล์
+        # =========================
         if "file" not in request.files:
             return jsonify({"status": "no_file"})
 
@@ -130,14 +133,13 @@ def upload():
         if api_result.get("status") == "error":
             return jsonify({"status": "error"})
 
-        # 🔥 ดึง trans_ref (สำคัญมาก)
         trans_ref = api_result.get("transRef")
 
         if not trans_ref:
             return jsonify({"status": "error"})
 
         # =========================
-        # 🔥 DB CHECK (กันซ้ำ)
+        # 🔥 DB CHECK
         # =========================
         db = get_db()
 
@@ -145,10 +147,7 @@ def upload():
             try:
                 cursor = db.cursor()
 
-                cursor.execute(
-                    "SELECT * FROM slips WHERE trans_ref=%s",
-                    (trans_ref,)
-                )
+                cursor.execute("SELECT * FROM slips WHERE trans_ref=%s", (trans_ref,))
                 existing = cursor.fetchone()
 
                 if existing:
@@ -159,7 +158,7 @@ def upload():
 
                 cursor.execute(
                     "INSERT INTO slips (trans_ref, amount) VALUES (%s, %s)",
-                    (trans_ref, api_result["amount"])
+                    (trans_ref, api_result.get("amount"))
                 )
                 db.commit()
 
@@ -171,7 +170,7 @@ def upload():
                 db.close()
 
         # =========================
-        # ⏱️ TIME DISPLAY (แค่โชว์)
+        # ⏱️ TIME DISPLAY
         # =========================
         time_text = "-"
         try:

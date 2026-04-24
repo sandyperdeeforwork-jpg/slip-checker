@@ -2,17 +2,17 @@ from flask import Flask, request, jsonify, render_template
 import cv2
 import requests
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 import pymysql
 
 app = Flask(__name__)
 
-print("🔥 PRODUCTION VERSION 🔥")
+print("🔥 CLEAN VERSION 🔥")
 
 # =========================
-# 🔑 CONFIG (ควรใช้ ENV)
+# 🔑 CONFIG
 # =========================
-SECRET_KEY = os.getenv("API_KEY")  # 🔥 แนะนำใช้ ENV
+SECRET_KEY = os.getenv("API_KEY") or "ใส่_API_KEY_ตรงนี้"
 API_URL = "https://connect.slip2go.com/api/verify-slip/qr-code/info"
 
 # =========================
@@ -49,8 +49,10 @@ def verify_slip(payload):
             timeout=10
         )
 
+        print("API STATUS:", res.status_code)
+        print("API TEXT:", res.text)
+
         if res.status_code != 200:
-            print("API STATUS:", res.status_code)
             return {"status": "error"}
 
         result = res.json()
@@ -64,8 +66,7 @@ def verify_slip(payload):
             "status": "ok",
             "amount": float(d.get("amount", 0)),
             "date": d.get("dateTime"),
-            "transRef": d.get("transRef"),
-            "receiver": d.get("receiver", "")
+            "transRef": d.get("transRef")
         }
 
     except Exception as e:
@@ -94,7 +95,7 @@ def upload():
         file.save(filepath)
 
         # =========================
-        # 🔍 QR SCAN (3 ชั้น)
+        # 🔍 QR SCAN
         # =========================
         img = cv2.imread(filepath)
 
@@ -118,7 +119,7 @@ def upload():
             return jsonify({"status": "no_qr"})
 
         # =========================
-        # 🌐 VERIFY
+        # 🌐 VERIFY API
         # =========================
         api_result = verify_slip(data)
         print("API RESULT:", api_result)
@@ -129,28 +130,11 @@ def upload():
         if api_result.get("status") == "error":
             return jsonify({"status": "error"})
 
-        # =========================
-        # 🔒 ANTI-FRAUD
-        # =========================
+        # 🔥 ดึง trans_ref (สำคัญมาก)
+        trans_ref = api_result.get("transRef")
 
-        # ✅ เช็คยอดเงิน
-        #if api_result["amount"] != 100.0:
-            #return jsonify({"status": "amount_mismatch"})
-
-        # ✅ เช็คเวลา (ไม่เกิน 5 นาที)
-        #try:
-            #slip_time = datetime.fromisoformat(api_result["date"])
-            #now = datetime.now(slip_time.tzinfo)
-
-            #if now - slip_time > timedelta(minutes=5):
-                #return jsonify({"status": "expired"})
-        #except Exception as e:
-            #print("TIME CHECK ERROR:", e)
-
-        #trans_ref = api_result.get("transRef")
-
-        #if not trans_ref:
-            #return jsonify({"status": "error"})
+        if not trans_ref:
+            return jsonify({"status": "error"})
 
         # =========================
         # 🔥 DB CHECK (กันซ้ำ)
@@ -180,24 +164,22 @@ def upload():
                 db.commit()
 
             except Exception as e:
-                print("DB INSERT ERROR:", e)
+                print("DB ERROR:", e)
                 return jsonify({"status": "error"})
 
             finally:
                 db.close()
 
         # =========================
-        # ⏱️ TIME DISPLAY
+        # ⏱️ TIME DISPLAY (แค่โชว์)
         # =========================
         time_text = "-"
         try:
             slip_time = datetime.fromisoformat(api_result["date"])
             now = datetime.now(slip_time.tzinfo)
             diff = now - slip_time
-
             minutes = diff.seconds // 60
             time_text = f"{minutes} นาที"
-
         except Exception as e:
             print("TIME ERROR:", e)
 

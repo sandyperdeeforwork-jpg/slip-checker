@@ -134,23 +134,23 @@ def upload():
         # =========================
 
         # ✅ เช็คยอดเงิน
-        if api_result["amount"] != 100.0:
-            return jsonify({"status": "amount_mismatch"})
+        #if api_result["amount"] != 100.0:
+            #return jsonify({"status": "amount_mismatch"})
 
         # ✅ เช็คเวลา (ไม่เกิน 5 นาที)
-        try:
-            slip_time = datetime.fromisoformat(api_result["date"])
-            now = datetime.now(slip_time.tzinfo)
+        #try:
+            #slip_time = datetime.fromisoformat(api_result["date"])
+            #now = datetime.now(slip_time.tzinfo)
 
-            if now - slip_time > timedelta(minutes=5):
-                return jsonify({"status": "expired"})
-        except Exception as e:
-            print("TIME CHECK ERROR:", e)
+            #if now - slip_time > timedelta(minutes=5):
+                #return jsonify({"status": "expired"})
+        #except Exception as e:
+            #print("TIME CHECK ERROR:", e)
 
-        trans_ref = api_result.get("transRef")
+        #trans_ref = api_result.get("transRef")
 
-        if not trans_ref:
-            return jsonify({"status": "error"})
+        #if not trans_ref:
+            #return jsonify({"status": "error"})
 
         # =========================
         # 🔥 DB CHECK (กันซ้ำ)

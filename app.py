@@ -39,36 +39,22 @@ import json
 
 def verify_slip(payload):
     try:
-        import json
-
-        headers = {
-            "Authorization": f"Bearer {SECRET_KEY}",
-            "Content-Type": "application/json; charset=utf-8"
-        }
-
-        body = json.dumps({
-            "payload": {
-                "qrCode": payload
-            }
-        }, ensure_ascii=False).encode("utf-8")
-
         res = requests.post(
             API_URL,
-            data=json.dumps({
+            json={
                 "payload": {
                     "qrCode": payload
                 }
-            }, ensure_ascii=False).encode("utf-8"),
+            },
             headers={
                 "Authorization": f"Bearer {SECRET_KEY}",
-                "Content-Type": "application/json; charset=utf-8"
+                "Content-Type": "application/json"
             },
             timeout=10
         )
 
         print("API STATUS:", res.status_code)
         print("API TEXT:", res.text)
-        print("API KEY:", SECRET_KEY)
 
         if res.status_code != 200:
             return {"status": "error"}

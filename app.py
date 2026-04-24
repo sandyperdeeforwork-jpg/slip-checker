@@ -12,7 +12,7 @@ print("🔥 UTF8 FIX VERSION 🔥")
 # =========================
 # 🔑 CONFIG
 # =========================
-SECRET_KEY = os.getenv("API_KEY") or "ใส่_API_KEY_ตรงนี้"
+SECRET_KEY = os.getenv("API_KEY")
 API_URL = "https://connect.slip2go.com/api/verify-slip/qr-code/info"
 
 # =========================

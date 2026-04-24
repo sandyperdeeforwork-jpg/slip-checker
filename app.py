@@ -35,16 +35,22 @@ def get_db():
 # =========================
 # 🌐 VERIFY API
 # =========================
+import json
+
 def verify_slip(payload):
     try:
         headers = {
             "Authorization": f"Bearer {SECRET_KEY}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json; charset=utf-8"
         }
 
         res = requests.post(
             API_URL,
-            json={"payload": {"qrCode": payload}},
+            data=json.dumps({
+                "payload": {
+                    "qrCode": payload
+                }
+            }, ensure_ascii=False).encode("utf-8"),
             headers=headers,
             timeout=10
         )
